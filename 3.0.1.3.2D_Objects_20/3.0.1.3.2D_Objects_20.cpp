@@ -25,6 +25,9 @@ float delta_time = 0.016f;
 int win_width = 0, win_height = 0;
 float centerx = 0.0f, centery = 0.0f, rotate_angle = 0.0f;
 
+// 필요 전역 변수
+float background_brightness = 1.0f;  // 초기값 (밝음)
+
 //road
 #define ROAD_UPPER_LINE 0
 #define ROAD_BODY 1
@@ -343,13 +346,13 @@ void prepare_house() {
 	glBindVertexArray(0);
 }
 
-void draw_house() {
+void draw_house(glm::vec3 body_color, glm::vec3 window_color) {
 	glBindVertexArray(VAO_house);
 
 	glUniform3fv(loc_primitive_color, 1, house_color[HOUSE_ROOF]);
 	glDrawArrays(GL_TRIANGLE_FAN, 0, 3);
 
-	glUniform3fv(loc_primitive_color, 1, house_color[HOUSE_BODY]);
+	glUniform3fv(loc_primitive_color, 1, &body_color[0]);
 	glDrawArrays(GL_TRIANGLE_FAN, 3, 4);
 
 	glUniform3fv(loc_primitive_color, 1, house_color[HOUSE_CHIMNEY]);
@@ -358,7 +361,7 @@ void draw_house() {
 	glUniform3fv(loc_primitive_color, 1, house_color[HOUSE_DOOR]);
 	glDrawArrays(GL_TRIANGLE_FAN, 11, 4);
 
-	glUniform3fv(loc_primitive_color, 1, house_color[HOUSE_WINDOW]);
+	glUniform3fv(loc_primitive_color, 1, &window_color[0]);
 	glDrawArrays(GL_TRIANGLE_FAN, 15, 4);
 
 	glBindVertexArray(0);
@@ -692,13 +695,13 @@ void draw_sword() {
 
 // hat variables
 glm::vec2 hat_cur_center;
+glm::vec2 hat_prev_center;
 glm::vec2 hat_nxt_center;
-float hat_cur_radius;
-float hat_cur_angle;
-float hat_angle_limit;
-float hat_angle_speed;
-float hat_timer;
-float hat_duration;
+float hat_cur_radius = 60.0f;           // 회전 반지름
+float hat_cur_angle = 0.0f;             // 회전 각도 (라디안)
+float hat_angle_speed = 0.5f;           // 각속도 (라디안/초)
+float hat_center_transition_timer = 0.0f;
+float hat_center_transition_interval = 10.0f;  // 중심이 바뀌는 주기
 bool hat_flying = true;
 
 // car sturct
@@ -712,16 +715,23 @@ struct Car {
 Car car1, car2;
 
 void init_car(Car& car, bool left_to_right, bool shirinking) {
-	float y = 150.0f + rand() % 300;
-	float x = left_to_right ? -700.0f : 700.0f;
+	float x, y;
+
+	if (shirinking) {
+		y = 150.0f;
+	}
+	else {
+		y = 15.0f;
+	}
+	x = left_to_right ? -700.0f : 700.0f;
 
 	car.position = glm::vec2(x, y);
 	float speed = 0.5f + static_cast<float>(rand() % 15) / 30.0f;
 	car.velocity = glm::vec2(left_to_right ? speed : -speed, 0.0f);
 
 	if (shirinking) {
-		car.scale = 2.0f;
-		car.scale_delta = -0.005f;
+		car.scale = 4.0f;
+		car.scale_delta = -0.0025f;
 	}
 	else {
 		car.scale = 0.5f;
@@ -733,8 +743,8 @@ void update_cars() {
 	car1.scale += car1.scale_delta;
 	car2.scale += car2.scale_delta;
 
-	if (car1.scale < 0.5f) car1.scale = 0.5f;
-	if (car2.scale > 2.0f) car1.scale = 2.0f;
+	if (car1.scale < 1.0f) car1.scale = 1.0f;
+	if (car2.scale > 10.0f) car2.scale = 10.0f;
 }
 
 void reset_hat_flight() {
@@ -743,33 +753,23 @@ void reset_hat_flight() {
 	const float screen_bottom = -400.0f;
 	const float screen_top = 400.0f;
 
-	hat_cur_center = hat_nxt_center;
-
 	while (true) {
-		float angle = glm::radians(static_cast<float>(rand() % 360));
-		glm::vec2 direction = glm::vec2(cos(angle), sin(angle));
-
-		hat_cur_radius = 20.0f + rand() % 30; // 반지름
-
-		float multiplier = 1.2f + static_cast<float>(rand()) / RAND_MAX * 0.6f;
-		glm::vec2 hat_candidate_center = hat_cur_center + direction * hat_cur_radius * multiplier;
-		if (hat_candidate_center.x >= screen_left && hat_candidate_center.x <= screen_right && hat_candidate_center.y >= screen_bottom && hat_candidate_center.y <= screen_top) {
-			hat_nxt_center = hat_candidate_center;
+		glm::vec2 new_center = glm::vec2(
+			screen_left + rand() % static_cast<int>(screen_right - screen_left),
+			screen_bottom + rand() % static_cast<int>(screen_top - screen_bottom)
+		);
+		if (glm::distance(new_center, hat_cur_center) > 100.0f) {
+			hat_prev_center = hat_cur_center;
+			hat_nxt_center = new_center;
 			break;
 		}
 	}
 
-	hat_cur_angle = 0.0f;
-	hat_angle_limit = PI;
-
-	float dir = (rand() % 2 == 0) ? 1.0f : -1.0f;
-	hat_angle_speed = dir * (0.0025f + static_cast<float>(rand()) / RAND_MAX * 0.005f); // 움직임 속도
-	hat_timer = 0.0f;
-	hat_duration = hat_angle_limit / std::abs(hat_angle_speed);
+	hat_center_transition_timer = 0.0f;
 }
 
 // soldier
-glm::vec2 soldier_position = glm::vec2(0.0f, 0.0f); // 초기 위치
+glm::vec2 soldier_position = glm::vec2(-450.0f, -320.0f); // 초기 위치
 glm::vec2 soldier_target_position = glm::vec2(0.0f, 0.0f);
 bool soldier_moving = false;
 const float soldier_speed = 200.0f;
@@ -795,12 +795,25 @@ float pet_jump_time = 0.0f;
 const float pet_jump_speed = 10.0f; // 강아지 점프 높이
 const float pet_jump_frequency = 0.1f; // 강아지 점프 속도
 
+
 void display(void) {
+	float time = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+	float target_brightness = 0.5f + 0.5f * sin(time * 0.3);
+	background_brightness += 0.05f * (target_brightness - background_brightness);
+
+	// 녹색 배경 (조도에 따라 어두워짐)
+	glm::vec3 bright_bg_color = glm::vec3(0.4f, 0.8f, 0.4f);   // 밝은 녹색
+	glm::vec3 dark_bg_color = glm::vec3(0.1f, 0.2f, 0.1f);     // 어두운 녹색
+	glm::vec3 current_bg_color = glm::mix(dark_bg_color, bright_bg_color, background_brightness);
+	glClearColor(current_bg_color.r, current_bg_color.g, current_bg_color.b, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
 	glm::mat4 ModelMatrix;
 
 	glClear(GL_COLOR_BUFFER_BIT);
 
-	ModelMatrix = glm::mat4(1.0f);
+	ModelMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -200.0f, 0.0f));
+	ModelMatrix = glm::scale(ModelMatrix, glm::vec3(4.0f, 4.0f, 0.0f));
 	ModelViewProjectionMatrix = ViewProjectionMatrix * ModelMatrix;
 	glUniformMatrix4fv(loc_ModelViewProjectionMatrix, 1, GL_FALSE, &ModelViewProjectionMatrix[0][0]);
 	draw_road();
@@ -858,29 +871,50 @@ void display(void) {
 	glUniformMatrix4fv(loc_ModelViewProjectionMatrix, 1, GL_FALSE, &ModelViewProjectionMatrix[0][0]);
 	draw_soldier();
 
-	ModelMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(-100.0f, 0.0f, 0.0f));
+	// 집 외벽 색상 (기본색 ↔ 밤색)
+	glm::vec3 house_bright_color = glm::vec3(235.0f / 255.0f, 225.0f / 255.0f, 196.0f / 255.0f);
+	glm::vec3 house_dark_color = glm::vec3(130.0f / 255.0f, 120.0f / 255.0f, 100.0f / 255.0f);
+	glm::vec3 current_house_color = glm::mix(house_dark_color, house_bright_color, background_brightness);
+
+	// 창문 색상 (노란빛 ↔ 어두운 회색)
+	glm::vec3 window_bright_color = glm::vec3(1.0f, 1.0f, 0.6f); // 불 켜진 창문 (노란빛)
+	glm::vec3 window_dark_color = glm::vec3(0.2f, 0.2f, 0.2f);   // 불 꺼진 창문
+	glm::vec3 current_window_color = glm::mix(window_dark_color, window_bright_color, 1.0f - background_brightness);
+
+	ModelMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(450.0f, 350.0f, 0.0f));
 	ModelMatrix = glm::scale(ModelMatrix, glm::vec3(2.0f, 2.0f, 1.0f));
 	ModelViewProjectionMatrix = ViewProjectionMatrix * ModelMatrix;
 	glUniformMatrix4fv(loc_ModelViewProjectionMatrix, 1, GL_FALSE, &ModelViewProjectionMatrix[0][0]);
-	draw_house();
+	draw_house(current_house_color, current_window_color);
 
 
 	if (hat_flying) {
-		// 매 프레임마다 원 운동
-		hat_cur_center = glm::mix(hat_cur_center, hat_nxt_center, 0.05f);
+		// 중심을 자연스럽게 보간 이동
+		hat_center_transition_timer += delta_time;
+		float t = glm::clamp(hat_center_transition_timer / hat_center_transition_interval, 0.0f, 1.0f);
+		hat_cur_center = glm::mix(hat_prev_center, hat_nxt_center, t);
 
-		float hat_x = hat_cur_center.x + hat_cur_radius * cos(hat_cur_angle);
-		float hat_y = hat_cur_center.y + hat_cur_radius * sin(hat_cur_angle);
+		// 중심 기준으로 회전하며 위치 계산
+		glm::vec2 orbit_offset = glm::vec2(
+			hat_cur_radius * cos(hat_cur_angle),
+			hat_cur_radius * sin(hat_cur_angle)
+		);
+		glm::vec2 hat_pos = hat_cur_center + orbit_offset;
 
-		hat_cur_angle += hat_angle_speed;
-		hat_timer += delta_time;
+		// 회전 각도 증가
+		hat_cur_angle += hat_angle_speed * delta_time;
 
-		if (hat_timer > hat_duration || std::abs(hat_cur_angle) > hat_angle_limit) { // 리셋 조건
+		// 중심 도달 시 재설정
+		if (hat_center_transition_timer > hat_center_transition_interval) {
 			reset_hat_flight();
 		}
 
-		ModelMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(hat_x, hat_y, 0.0f));
-		ModelMatrix = glm::scale(ModelMatrix, glm::vec3(2.0f, 2.0f, 1.0f));
+		// 변환 적용 (공전 + 자전)
+		ModelMatrix = glm::mat4(1.0f);
+		ModelMatrix = glm::translate(ModelMatrix, glm::vec3(hat_pos, 0.0f));               // 공전 위치로 이동
+		ModelMatrix = glm::rotate(ModelMatrix, hat_cur_angle, glm::vec3(0.0f, 0.0f, 1.0f)); // 자전
+		ModelMatrix = glm::scale(ModelMatrix, glm::vec3(1.5f, 1.5f, 1.0f));                 // 크기 조절
+
 		ModelViewProjectionMatrix = ViewProjectionMatrix * ModelMatrix;
 		glUniformMatrix4fv(loc_ModelViewProjectionMatrix, 1, GL_FALSE, &ModelViewProjectionMatrix[0][0]);
 		draw_hat();
