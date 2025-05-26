@@ -1,4 +1,7 @@
 # 대머리 용사의 모자 구하기 대작전
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/ff6f8d25-fc3c-4774-8080-09401ceb32c8" width="600"/>
+</p>
 
 ### [요구 조건]
 **(a) 제공된 물체 9개 중 5개를 선택 후, 각 물체에 대하여 서로 다른 창의적인 정적/동적 효과 생성**
